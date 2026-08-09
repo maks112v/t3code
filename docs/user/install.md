@@ -51,19 +51,24 @@ yay -S t3code-nightly-bin
 
 ## Providers
 
-T3 Code drives provider CLIs; it does not ship them. Install the CLI for each provider you want
-to use, then authenticate it.
+Most providers use a separately installed CLI. Install and authenticate the CLI for each provider
+you want to use; GitHub Copilot is the exception because its SDK bundles the matching runtime.
 
-| Provider   | CLI                                                   | Default binary | Log in with           |
-| ---------- | ----------------------------------------------------- | -------------- | --------------------- |
-| Codex      | [Codex CLI](https://developers.openai.com/codex/cli)  | `codex`        | `codex login`         |
-| Claude     | [Claude Code](https://claude.com/product/claude-code) | `claude`       | `claude auth login`   |
-| Cursor     | [Cursor CLI](https://cursor.com/cli)                  | `cursor-agent` | `agent login`         |
-| Grok Build | [Grok Build CLI](https://x.ai/cli)                    | `grok`         | `grok login`          |
-| OpenCode   | [OpenCode](https://opencode.ai)                       | `opencode`     | `opencode auth login` |
+| Provider       | CLI                                                   | Default binary | Log in with           |
+| -------------- | ----------------------------------------------------- | -------------- | --------------------- |
+| Codex          | [Codex CLI](https://developers.openai.com/codex/cli)  | `codex`        | `codex login`         |
+| Claude         | [Claude Code](https://claude.com/product/claude-code) | `claude`       | `claude auth login`   |
+| Cursor         | [Cursor CLI](https://cursor.com/cli)                  | `cursor-agent` | `agent login`         |
+| GitHub Copilot | [Copilot CLI](https://docs.github.com/copilot)        | Bundled        | `copilot login`       |
+| Grok Build     | [Grok Build CLI](https://x.ai/cli)                    | `grok`         | `grok login`          |
+| OpenCode       | [OpenCode](https://opencode.ai)                       | `opencode`     | `opencode auth login` |
 
 Cursor is the one to watch: install Cursor CLI, which provides the `cursor-agent` binary that
 T3 Code looks for, but authenticate with `agent login`, not `cursor-agent login`.
+
+GitHub Copilot support is a proof of concept. Its SDK bundles the matching runtime, so no binary
+path is needed. Authenticate once with `copilot login`, or set `COPILOT_GITHUB_TOKEN` on the
+provider instance. Rollback and provider-backed title/branch/commit generation are not included.
 
 Run the login command on the machine running the T3 Code server, not on the device you browse
 from.
