@@ -46,6 +46,13 @@ it.effect("discovers enabled models and forwards per-instance options", () =>
       supportedReasoningEfforts: ["low", "high"],
       defaultReasoningEffort: "high",
     } as ModelInfo;
+    const modelWithoutDefault = {
+      id: "gpt-5.4",
+      name: "GPT-5.4",
+      capabilities: {},
+      policy: { state: "enabled", terms: "" },
+      supportedReasoningEfforts: ["low", "medium", "high"],
+    } as ModelInfo;
     const factory: GitHubCopilotClientFactory = (options) => {
       receivedOptions = options;
       return {
@@ -54,7 +61,7 @@ it.effect("discovers enabled models and forwards per-instance options", () =>
           stopCalls += 1;
           return [];
         },
-        listModels: async () => [model],
+        listModels: async () => [model, modelWithoutDefault],
       };
     };
     const environment = { COPILOT_GITHUB_TOKEN: "test-token" };
@@ -70,7 +77,7 @@ it.effect("discovers enabled models and forwards per-instance options", () =>
     NodeAssert.equal(snapshot.requiresNewThreadForModelChange, undefined);
     NodeAssert.deepEqual(
       snapshot.models.map((entry) => entry.slug),
-      ["claude-sonnet-4.6", "custom-model"],
+      ["claude-sonnet-4.6", "gpt-5.4", "custom-model"],
     );
     NodeAssert.equal(receivedOptions?.baseDirectory, "/tmp/copilot-home");
     NodeAssert.equal(receivedOptions?.env, environment);
@@ -81,6 +88,12 @@ it.effect("discovers enabled models and forwards per-instance options", () =>
     );
     NodeAssert.ok(reasoning?.type === "select");
     NodeAssert.equal(reasoning.options.find((option) => option.isDefault)?.id, "high");
+
+    const fallbackReasoning = snapshot.models[1]?.capabilities?.optionDescriptors?.find(
+      (descriptor) => descriptor.id === "reasoningEffort" && descriptor.type === "select",
+    );
+    NodeAssert.ok(fallbackReasoning?.type === "select");
+    NodeAssert.equal(fallbackReasoning.options.find((option) => option.isDefault)?.id, "medium");
   }),
 );
 

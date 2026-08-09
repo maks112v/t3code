@@ -36,6 +36,11 @@ export interface GitHubCopilotClientFactory {
 function modelCapabilities(model: ModelInfo): ModelCapabilities {
   const efforts = model.supportedReasoningEfforts ?? [];
   if (efforts.length === 0) return EMPTY_CAPABILITIES;
+  const defaultEffort = efforts.includes(model.defaultReasoningEffort ?? "medium")
+    ? (model.defaultReasoningEffort ?? "medium")
+    : efforts.includes("medium")
+      ? "medium"
+      : efforts[0];
   return createModelCapabilities({
     optionDescriptors: [
       buildSelectOptionDescriptor({
@@ -44,7 +49,7 @@ function modelCapabilities(model: ModelInfo): ModelCapabilities {
         options: efforts.map((effort) => ({
           value: effort,
           label: effort,
-          isDefault: effort === model.defaultReasoningEffort,
+          isDefault: effort === defaultEffort,
         })),
       }),
     ],
