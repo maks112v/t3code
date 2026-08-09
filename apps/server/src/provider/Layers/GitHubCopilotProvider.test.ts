@@ -67,6 +67,7 @@ it.effect("discovers enabled models and forwards per-instance options", () =>
 
     NodeAssert.equal(snapshot.status, "ready");
     NodeAssert.equal(snapshot.auth.status, "authenticated");
+    NodeAssert.equal(snapshot.requiresNewThreadForModelChange, undefined);
     NodeAssert.deepEqual(
       snapshot.models.map((entry) => entry.slug),
       ["claude-sonnet-4.6", "custom-model"],

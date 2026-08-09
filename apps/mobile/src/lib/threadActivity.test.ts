@@ -626,6 +626,55 @@ describe("buildThreadFeed", () => {
       expanded: true,
     });
   });
+
+  it("keeps the resolved Auto model visible when work-log rows overflow", () => {
+    const activity = (id: string, alwaysVisible = false): ThreadFeedActivity => ({
+      id,
+      createdAt: "2026-04-01T00:00:01.000Z",
+      turnId: null,
+      summary: id,
+      detail: null,
+      canExpand: false,
+      getFullDetail: () => null,
+      getCopyText: () => id,
+      icon: "zap",
+      toolLike: false,
+      status: null,
+      ...(alwaysVisible ? { alwaysVisible: true } : {}),
+    });
+    const feed: ThreadFeedEntry[] = [
+      {
+        type: "activity-group",
+        id: "work-group-model",
+        createdAt: "2026-04-01T00:00:01.000Z",
+        turnId: null,
+        activities: [
+          activity("model", true),
+          activity("tool-1"),
+          activity("tool-2"),
+          activity("tool-3"),
+        ],
+      },
+    ];
+
+    const collapsed = deriveThreadFeedPresentation(feed, null, new Set());
+    expect(collapsed.map((entry) => entry.id)).toEqual([
+      "model",
+      "tool-3",
+      "work-toggle:work-group-model",
+    ]);
+    expect(collapsed.at(-1)).toMatchObject({ hiddenCount: 2 });
+
+    const shortFeed = [
+      {
+        ...feed[0]!,
+        activities: [activity("model", true), activity("tool-1")],
+      },
+    ];
+    expect(
+      deriveThreadFeedPresentation(shortFeed, null, new Set()).map((entry) => entry.id),
+    ).toEqual(["model", "tool-1"]);
+  });
 });
 
 describe("quiet timeline: nested agents", () => {

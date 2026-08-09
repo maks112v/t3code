@@ -21,7 +21,6 @@ const PRESENTATION = {
   displayName: "GitHub Copilot",
   badgeLabel: "Proof of Concept",
   showInteractionModeToggle: true,
-  requiresNewThreadForModelChange: true,
 } as const;
 
 const EMPTY_CAPABILITIES: ModelCapabilities = createModelCapabilities({ optionDescriptors: [] });

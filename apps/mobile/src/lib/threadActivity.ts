@@ -54,6 +54,7 @@ export interface ThreadFeedActivity {
     | "zap";
   readonly toolLike: boolean;
   readonly status: "success" | "failure" | "neutral" | null;
+  readonly alwaysVisible?: boolean;
 }
 
 const MAX_VISIBLE_WORK_LOG_ENTRIES = 1;
@@ -1317,8 +1318,15 @@ function appendPresentedFeedEntry(
 
   const groupId = entry.id;
   const expanded = expandedWorkGroupIds.has(groupId);
-  const hiddenCount = activities.length - MAX_VISIBLE_WORK_LOG_ENTRIES;
-  const visibleActivities = expanded ? activities : activities.slice(-MAX_VISIBLE_WORK_LOG_ENTRIES);
+  const overflowCandidates = activities.filter((activity) => activity.alwaysVisible !== true);
+  const hiddenActivities = overflowCandidates.slice(0, -MAX_VISIBLE_WORK_LOG_ENTRIES);
+  const hiddenIds = new Set(hiddenActivities.map((activity) => activity.id));
+  const hiddenCount = hiddenActivities.length;
+  const visibleActivities = expanded
+    ? activities
+    : activities.filter(
+        (activity) => activity.alwaysVisible === true || !hiddenIds.has(activity.id),
+      );
 
   for (const activity of visibleActivities) {
     result.push({
@@ -1329,16 +1337,18 @@ function appendPresentedFeedEntry(
       activities: [activity],
     });
   }
-  result.push({
-    type: "work-toggle",
-    id: `work-toggle:${groupId}`,
-    createdAt: entry.createdAt,
-    turnId: entry.turnId,
-    groupId,
-    hiddenCount,
-    expanded,
-    onlyToolActivities: activities.every((activity) => activity.toolLike),
-  });
+  if (hiddenCount > 0) {
+    result.push({
+      type: "work-toggle",
+      id: `work-toggle:${groupId}`,
+      createdAt: entry.createdAt,
+      turnId: entry.turnId,
+      groupId,
+      hiddenCount,
+      expanded,
+      onlyToolActivities: activities.every((activity) => activity.toolLike),
+    });
+  }
 }
 
 /**
@@ -1566,6 +1576,7 @@ export function buildThreadFeed(
               icon: workEntryIcon(entry),
               toolLike: workLogEntryIsToolLike(entry),
               status: workEntryStatus(entry),
+              ...(entry.activityKind === "model.rerouted" ? { alwaysVisible: true } : {}),
             },
           };
         }),

@@ -84,6 +84,8 @@ interface SessionContext {
   readonly copilot: CopilotSession;
   readonly threadId: ThreadId;
   session: ProviderSession;
+  reasoningEffort: ReasoningEffort | undefined;
+  autoModelEnabled: boolean;
   activeTurnId: TurnId | undefined;
   readonly pendingApprovals: Map<ApprovalRequestId, PendingApproval>;
   readonly pendingUserInputs: Map<ApprovalRequestId, PendingUserInput>;
@@ -110,6 +112,10 @@ function asReasoningEffort(value: string | undefined): ReasoningEffort | undefin
     default:
       return undefined;
   }
+}
+
+function isAutoModel(value: string | undefined): boolean {
+  return value?.toLowerCase() === "auto";
 }
 
 function resumeSessionId(value: unknown): string | undefined {
@@ -296,6 +302,23 @@ export function makeGitHubCopilotAdapter(
       };
 
       switch (event.type) {
+        case "assistant.turn_start": {
+          const resolvedModel = trim(event.data.model);
+          if (!context.autoModelEnabled || !resolvedModel || isAutoModel(resolvedModel)) {
+            return [];
+          }
+          return [
+            {
+              ...base(),
+              type: "model.rerouted",
+              payload: {
+                fromModel: "auto",
+                toModel: resolvedModel,
+                reason: "GitHub Copilot Auto selected this model.",
+              },
+            },
+          ];
+        }
         case "assistant.message_delta":
           return [
             {
@@ -426,6 +449,29 @@ export function makeGitHubCopilotAdapter(
               payload: { name: event.data.title, metadata: { ...event.data } },
             },
           ];
+        case "session.model_change": {
+          if (event.agentId) return [];
+          const previousModel = trim(event.data.previousModel) ?? context.session.model;
+          const newModel = trim(event.data.newModel);
+          if (!newModel) return [];
+          context.session = {
+            ...context.session,
+            model: newModel,
+            updatedAt: event.timestamp,
+          };
+          context.reasoningEffort = asReasoningEffort(trim(event.data.reasoningEffort));
+          context.autoModelEnabled = isAutoModel(newModel);
+          const reason = trim(event.data.cause);
+          return previousModel && previousModel !== newModel && reason
+            ? [
+                {
+                  ...base(),
+                  type: "model.rerouted",
+                  payload: { fromModel: previousModel, toModel: newModel, reason },
+                },
+              ]
+            : [];
+        }
         case "session.error":
           return [
             {
@@ -605,6 +651,8 @@ export function makeGitHubCopilotAdapter(
         copilot,
         threadId: input.threadId,
         session,
+        reasoningEffort,
+        autoModelEnabled: isAutoModel(selectedModel),
         activeTurnId: undefined,
         pendingApprovals,
         pendingUserInputs,
@@ -642,6 +690,53 @@ export function makeGitHubCopilotAdapter(
           operation: "sendTurn",
           issue: "Turn requires non-empty text or attachments.",
         });
+      }
+      const modelSelection = input.modelSelection;
+      if (modelSelection !== undefined && modelSelection.instanceId !== instanceId) {
+        return yield* new ProviderAdapterValidationError({
+          provider: PROVIDER,
+          operation: "sendTurn",
+          issue: `GitHub Copilot model selection is bound to instance '${modelSelection.instanceId}', expected '${instanceId}'.`,
+        });
+      }
+      if (modelSelection) {
+        const reasoningEffort = asReasoningEffort(
+          getModelSelectionStringOptionValue(modelSelection, "reasoningEffort"),
+        );
+        const shouldSwitch =
+          modelSelection.model !== context.session.model ||
+          reasoningEffort !== context.reasoningEffort;
+        if (shouldSwitch) {
+          if (context.activeTurnId) {
+            return yield* new ProviderAdapterValidationError({
+              provider: PROVIDER,
+              operation: "sendTurn",
+              issue:
+                "GitHub Copilot cannot switch models while a turn is running. Interrupt or wait for it to finish, then retry.",
+            });
+          }
+          yield* Effect.tryPromise({
+            try: () =>
+              context.copilot.setModel(
+                modelSelection.model,
+                reasoningEffort ? { reasoningEffort } : undefined,
+              ),
+            catch: (cause) =>
+              new ProviderAdapterRequestError({
+                provider: PROVIDER,
+                method: "session.setModel",
+                detail: messageFromCause(cause, "Failed to switch GitHub Copilot model."),
+                cause,
+              }),
+          });
+          context.session = {
+            ...context.session,
+            model: modelSelection.model,
+            updatedAt: DateTime.formatIso(yield* DateTime.now),
+          };
+          context.reasoningEffort = reasoningEffort;
+        }
+        context.autoModelEnabled = isAutoModel(modelSelection.model);
       }
       const turnId = TurnId.make(randomUUID());
       context.activeTurnId = turnId;
@@ -826,7 +921,7 @@ export function makeGitHubCopilotAdapter(
 
     return {
       provider: PROVIDER,
-      capabilities: { sessionModelSwitch: "unsupported" },
+      capabilities: { sessionModelSwitch: "in-session" },
       startSession,
       sendTurn,
       interruptTurn,

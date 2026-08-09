@@ -1023,6 +1023,45 @@ describe("deriveMessagesTimelineRows", () => {
       expanded: true,
     });
   });
+
+  it("keeps the resolved Auto model visible when work log rows overflow", () => {
+    const timelineEntries = [
+      {
+        id: "model-entry",
+        kind: "work" as const,
+        createdAt: "2026-01-01T00:00:01Z",
+        entry: {
+          id: "model",
+          createdAt: "2026-01-01T00:00:01Z",
+          label: "Using claude-sonnet-4.6",
+          tone: "info" as const,
+          sourceActivityKind: "model.rerouted",
+        },
+      },
+      ...[1, 2, 3].map((index) => ({
+        id: `tool-entry-${index}`,
+        kind: "work" as const,
+        createdAt: `2026-01-01T00:00:0${index + 1}Z`,
+        entry: {
+          id: `tool-${index}`,
+          createdAt: `2026-01-01T00:00:0${index + 1}Z`,
+          label: `tool ${index}`,
+          tone: "tool" as const,
+        },
+      })),
+    ];
+
+    const rows = deriveMessagesTimelineRows({
+      timelineEntries,
+      isWorking: false,
+      activeTurnStartedAt: null,
+      turnDiffSummaryByAssistantMessageId: new Map(),
+      revertTurnCountByUserMessageId: new Map(),
+    });
+
+    expect(rows.map((row) => row.id)).toEqual(["model", "tool-3", "work-toggle:model-entry"]);
+    expect(rows.find((row) => row.kind === "work-toggle")).toMatchObject({ hiddenCount: 2 });
+  });
 });
 
 describe("computeStableMessagesTimelineRows", () => {

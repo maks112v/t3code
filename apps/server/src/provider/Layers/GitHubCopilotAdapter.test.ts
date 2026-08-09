@@ -32,6 +32,9 @@ it.effect("starts a session, sends a turn, and maps streaming events", () =>
       let sessionConfig: SessionConfig | undefined;
       let sentMessage: MessageOptions | undefined;
       let handler: ((event: SessionEvent) => void) | undefined;
+      let createSessionCalls = 0;
+      let switchedModel: string | undefined;
+      let switchedReasoningEffort: string | undefined;
 
       const copilotSession = {
         sessionId: "copilot-session-1",
@@ -44,24 +47,34 @@ it.effect("starts a session, sends a turn, and maps streaming events", () =>
         send: async (message: MessageOptions) => {
           sentMessage = message;
           handler?.({
+            type: "assistant.turn_start",
+            id: "event-turn-start",
+            timestamp: "2026-08-09T12:00:00.000Z",
+            data: { turnId: "copilot-turn-1", model: "claude-sonnet-4.6" },
+          } as SessionEvent);
+          handler?.({
             type: "assistant.message_delta",
             id: "event-delta",
-            timestamp: "2026-08-09T12:00:00.000Z",
+            timestamp: "2026-08-09T12:00:00.001Z",
             data: { messageId: "message-1", deltaContent: "Hello" },
           } as SessionEvent);
           handler?.({
             type: "assistant.message",
             id: "event-message",
-            timestamp: "2026-08-09T12:00:00.001Z",
+            timestamp: "2026-08-09T12:00:00.002Z",
             data: { messageId: "message-1", content: "Hello" },
           } as SessionEvent);
           handler?.({
             type: "session.idle",
             id: "event-idle",
-            timestamp: "2026-08-09T12:00:00.002Z",
+            timestamp: "2026-08-09T12:00:00.003Z",
             data: { aborted: false },
           } as SessionEvent);
           return "message-1";
+        },
+        setModel: async (model: string, options?: Parameters<CopilotSession["setModel"]>[1]) => {
+          switchedModel = model;
+          switchedReasoningEffort = options?.reasoningEffort;
         },
         abort: async () => undefined,
         disconnect: async () => undefined,
@@ -71,6 +84,7 @@ it.effect("starts a session, sends a turn, and maps streaming events", () =>
         start: async () => undefined,
         stop: async () => [],
         createSession: async (config: SessionConfig) => {
+          createSessionCalls += 1;
           sessionConfig = config;
           return copilotSession;
         },
@@ -80,7 +94,7 @@ it.effect("starts a session, sends a turn, and maps streaming events", () =>
         instanceId: ProviderInstanceId.make("githubCopilot"),
         clientFactory: () => client,
       });
-      const eventsFiber = yield* Stream.take(adapter.streamEvents, 7).pipe(
+      const eventsFiber = yield* Stream.take(adapter.streamEvents, 8).pipe(
         Stream.runCollect,
         Effect.forkChild,
       );
@@ -93,7 +107,7 @@ it.effect("starts a session, sends a turn, and maps streaming events", () =>
         runtimeMode: "full-access",
         modelSelection: {
           instanceId: ProviderInstanceId.make("githubCopilot"),
-          model: "claude-sonnet-4.6",
+          model: "auto",
           options: [{ id: "reasoningEffort", value: "high" }],
         },
       });
@@ -101,7 +115,7 @@ it.effect("starts a session, sends a turn, and maps streaming events", () =>
 
       const events = Array.from(yield* Fiber.join(eventsFiber));
       NodeAssert.equal(session.resumeCursor && typeof session.resumeCursor, "object");
-      NodeAssert.equal(sessionConfig?.model, "claude-sonnet-4.6");
+      NodeAssert.equal(sessionConfig?.model, "auto");
       NodeAssert.equal(sessionConfig?.reasoningEffort, "high");
       NodeAssert.equal(sentMessage?.prompt, "Say hello");
       NodeAssert.deepEqual(
@@ -110,12 +124,55 @@ it.effect("starts a session, sends a turn, and maps streaming events", () =>
           "session.started",
           "thread.started",
           "turn.started",
+          "model.rerouted",
           "content.delta",
           "item.completed",
           "turn.completed",
           "session.state.changed",
         ],
       );
+      const modelEvent = events.find((event) => event.type === "model.rerouted");
+      NodeAssert.deepEqual(modelEvent?.payload, {
+        fromModel: "auto",
+        toModel: "claude-sonnet-4.6",
+        reason: "GitHub Copilot Auto selected this model.",
+      });
+
+      const switchedEventsFiber = yield* Stream.take(adapter.streamEvents, 5).pipe(
+        Stream.runCollect,
+        Effect.forkChild,
+      );
+      const switchedTurn = yield* adapter.sendTurn({
+        threadId,
+        input: "Continue with the new model",
+        attachments: [],
+        modelSelection: {
+          instanceId: ProviderInstanceId.make("githubCopilot"),
+          model: "gpt-5.4",
+          options: [{ id: "reasoningEffort", value: "low" }],
+        },
+      });
+      const switchedEvents = Array.from(yield* Fiber.join(switchedEventsFiber));
+      const sessions = yield* adapter.listSessions();
+
+      NodeAssert.equal(adapter.capabilities.sessionModelSwitch, "in-session");
+      NodeAssert.equal(createSessionCalls, 1);
+      NodeAssert.equal(switchedModel, "gpt-5.4");
+      NodeAssert.equal(switchedReasoningEffort, "low");
+      NodeAssert.equal(sentMessage?.prompt, "Continue with the new model");
+      NodeAssert.deepEqual(switchedTurn.resumeCursor, { sessionId: "copilot-session-1" });
+      NodeAssert.equal(sessions[0]?.model, "gpt-5.4");
+      NodeAssert.deepEqual(
+        switchedEvents.map((event) => event.type),
+        [
+          "turn.started",
+          "content.delta",
+          "item.completed",
+          "turn.completed",
+          "session.state.changed",
+        ],
+      );
+      NodeAssert.deepEqual(switchedEvents[0]?.payload, { model: "gpt-5.4" });
     }),
   ).pipe(
     Effect.provide(

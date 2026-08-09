@@ -142,3 +142,34 @@ describe("runtimeEventToActivities tool streaming persistence", () => {
     expect(payload.data).toEqual(streamingData);
   });
 });
+
+describe("runtimeEventToActivities model routing", () => {
+  it("persists the concrete model selected by an automatic model router", () => {
+    const event = {
+      ...base,
+      type: "model.rerouted",
+      eventId: EventId.make("evt-model-rerouted"),
+      payload: {
+        fromModel: "auto",
+        toModel: "claude-sonnet-4.6",
+        reason: "GitHub Copilot Auto selected this model.",
+      },
+    } satisfies ProviderRuntimeEvent;
+
+    expect(runtimeEventToActivities(event)).toEqual([
+      {
+        id: EventId.make("evt-model-rerouted"),
+        createdAt: base.createdAt,
+        tone: "info",
+        kind: "model.rerouted",
+        summary: "Using claude-sonnet-4.6",
+        payload: {
+          fromModel: "auto",
+          toModel: "claude-sonnet-4.6",
+          detail: "GitHub Copilot Auto selected this model.",
+        },
+        turnId: null,
+      },
+    ]);
+  });
+});
