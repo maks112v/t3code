@@ -36,14 +36,17 @@ import {
 import { useCopyToClipboard } from "../../hooks/useCopyToClipboard";
 import { useT3ProjectFileState } from "../../hooks/useT3ProjectFileScripts";
 import { shortcutLabelForCommand } from "../../keybindings";
-import { keybindingValueForCommand } from "../../lib/projectScriptKeybindings";
+import {
+  decodeProjectScriptKeybindingRule,
+  keybindingRulesForCommand,
+  keybindingValueForCommand,
+} from "../../lib/projectScriptKeybindings";
 import { readLocalApi } from "../../localApi";
 import {
   buildProjectScript,
   commandForProjectScript,
   nextProjectScriptId,
 } from "../../projectScripts";
-import { decodeProjectScriptKeybindingRule } from "../../lib/projectScriptKeybindings";
 import {
   applyProviderInstanceSettings,
   deriveProviderInstanceEntries,
@@ -455,7 +458,7 @@ function ProjectDetail({
       try {
         // Captured before the write so a cleared or deleted binding can be
         // removed from the keybindings config afterwards.
-        const previousKeybinding = keybindingValueForCommand(keybindings, keybindingCommand);
+        const previousTargets = keybindingRulesForCommand(keybindings, keybindingCommand);
         const updateResult = await updateAllMembers(
           { scripts: nextScripts },
           "Failed to save scripts",
@@ -470,37 +473,24 @@ function ProjectDetail({
         const environmentIds = [
           ...new Set(group.memberProjects.map((member) => member.environmentId)),
         ];
-        const previousTarget = previousKeybinding
-          ? decodeProjectScriptKeybindingRule({
-              keybinding: previousKeybinding,
-              command: keybindingCommand,
-            })
-          : null;
-        if (keybindingRule) {
-          // `replace` swaps the command's previous rule instead of appending a
-          // second one that would keep the old shortcut alive.
-          const input =
-            previousTarget && previousTarget.key !== keybindingRule.key
-              ? { ...keybindingRule, replace: previousTarget }
-              : keybindingRule;
-          for (const environmentId of environmentIds) {
-            const result = mapAtomCommandResult(
-              await upsertKeybinding({ environmentId, input }),
-              () => undefined,
-            );
-            if (result._tag === "Failure") {
-              reportFailure("Failed to save keybinding", result);
-              return result;
-            }
-          }
-        } else if (previousTarget) {
-          for (const environmentId of environmentIds) {
+        for (const environmentId of environmentIds) {
+          for (const previousTarget of previousTargets) {
             const result = mapAtomCommandResult(
               await removeKeybinding({ environmentId, input: previousTarget }),
               () => undefined,
             );
             if (result._tag === "Failure") {
               reportFailure("Failed to remove keybinding", result);
+              return result;
+            }
+          }
+          if (keybindingRule) {
+            const result = mapAtomCommandResult(
+              await upsertKeybinding({ environmentId, input: keybindingRule }),
+              () => undefined,
+            );
+            if (result._tag === "Failure") {
+              reportFailure("Failed to save keybinding", result);
               return result;
             }
           }

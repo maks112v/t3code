@@ -18,6 +18,7 @@ import {
   type ServerRemoveKeybindingInput,
   type ServerUpsertKeybindingInput,
   type ServerConfigIssue,
+  type KeybindingCommand,
 } from "@t3tools/contracts";
 import * as Array from "effect/Array";
 import * as Cache from "effect/Cache";
@@ -282,6 +283,13 @@ export class Keybindings extends Context.Service<
      */
     readonly removeKeybindingRule: (
       input: ServerRemoveKeybindingInput,
+    ) => Effect.Effect<ResolvedKeybindingsConfig, KeybindingsConfigError>;
+
+    /**
+     * Remove every persisted rule for the supplied commands in one atomic write.
+     */
+    readonly removeKeybindingRulesForCommands: (
+      commands: ReadonlyArray<KeybindingCommand>,
     ) => Effect.Effect<ResolvedKeybindingsConfig, KeybindingsConfigError>;
   }
 >()("t3/keybindings") {}
@@ -687,6 +695,27 @@ const make = Effect.gen(function* () {
           const customConfig = yield* loadWritableCustomKeybindingsConfig();
           const target = keybindingRuleFromRemoveInput(input);
           const nextConfig = customConfig.filter((entry) => !isSameKeybindingRule(entry, target));
+          yield* writeConfigAtomically(nextConfig);
+          const nextResolved = mergeWithDefaultKeybindings(
+            compileResolvedKeybindingsConfig(nextConfig),
+          );
+          yield* Cache.set(resolvedConfigCache, resolvedConfigCacheKey, {
+            keybindings: nextResolved,
+            issues: [],
+          });
+          yield* emitChange({
+            keybindings: nextResolved,
+            issues: [],
+          });
+          return nextResolved;
+        }),
+      ),
+    removeKeybindingRulesForCommands: (commands) =>
+      upsertSemaphore.withPermits(1)(
+        Effect.gen(function* () {
+          const customConfig = yield* loadWritableCustomKeybindingsConfig();
+          const commandSet = new Set(commands);
+          const nextConfig = customConfig.filter((entry) => !commandSet.has(entry.command));
           yield* writeConfigAtomically(nextConfig);
           const nextResolved = mergeWithDefaultKeybindings(
             compileResolvedKeybindingsConfig(nextConfig),

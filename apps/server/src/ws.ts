@@ -65,6 +65,7 @@ import { RpcSerialization, RpcServer } from "effect/unstable/rpc";
 import * as CheckpointDiffQuery from "./checkpointing/CheckpointDiffQuery.ts";
 import * as ServerConfig from "./config.ts";
 import * as Keybindings from "./keybindings.ts";
+import { orphanedProjectScriptCommandsOnDelete } from "./projectKeybindingCleanup.ts";
 import * as ExternalLauncher from "./process/externalLauncher.ts";
 import {
   projectActivityEvent,
@@ -1036,6 +1037,23 @@ const makeWsRpcLayer = (
             ORCHESTRATION_WS_METHODS.dispatchCommand,
             Effect.gen(function* () {
               const normalizedCommand = yield* normalizeDispatchCommand(command);
+              const projectScriptCommandsToRemove =
+                normalizedCommand.type === "project.delete"
+                  ? yield* projectionSnapshotQuery.getSnapshot().pipe(
+                      Effect.map((snapshot) =>
+                        orphanedProjectScriptCommandsOnDelete(
+                          normalizedCommand.projectId,
+                          snapshot.projects,
+                        ),
+                      ),
+                      Effect.catchCause((cause) =>
+                        Effect.logWarning(
+                          "failed to read project scripts before keybinding cleanup",
+                          { projectId: normalizedCommand.projectId, cause },
+                        ).pipe(Effect.as([])),
+                      ),
+                    )
+                  : [];
               // Archive and settle both mean "done with this thread", so a
               // live provider session must not keep running background work
               // (PR monitors, dev servers, subagent fleets) after either
@@ -1069,6 +1087,21 @@ const makeWsRpcLayer = (
                   )
                 : false;
               const result = yield* dispatchNormalizedCommand(normalizedCommand);
+              if (projectScriptCommandsToRemove.length > 0) {
+                yield* keybindings
+                  .removeKeybindingRulesForCommands(projectScriptCommandsToRemove)
+                  .pipe(
+                    Effect.catchCause((cause) =>
+                      Effect.logWarning("failed to remove deleted project keybindings", {
+                        projectId:
+                          normalizedCommand.type === "project.delete"
+                            ? normalizedCommand.projectId
+                            : undefined,
+                        cause,
+                      }),
+                    ),
+                  );
+              }
               if (parkingCommand) {
                 const parkingKind = parkingCommand.type === "thread.archive" ? "archive" : "settle";
                 if (shouldStopSessionAfterCommand) {

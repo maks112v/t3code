@@ -163,7 +163,10 @@ import {
 import { cn, randomHex } from "~/lib/utils";
 import { COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS } from "~/workspaceTitlebar";
 import { stackedThreadToast, toastManager } from "./ui/toast";
-import { decodeProjectScriptKeybindingRule } from "~/lib/projectScriptKeybindings";
+import {
+  decodeProjectScriptKeybindingRule,
+  keybindingRulesForCommand,
+} from "~/lib/projectScriptKeybindings";
 import { type NewProjectScriptInput } from "./ProjectScriptsControl";
 import {
   buildProjectScript,
@@ -1186,6 +1189,9 @@ function ChatViewContent(props: ChatViewProps) {
   const routeThreadKey = useMemo(() => scopedThreadKey(routeThreadRef), [routeThreadRef]);
   const updateProject = useAtomCommand(projectEnvironment.update, { reportFailure: false });
   const upsertKeybinding = useAtomCommand(serverEnvironment.upsertKeybinding, {
+    reportFailure: false,
+  });
+  const removeKeybinding = useAtomCommand(serverEnvironment.removeKeybinding, {
     reportFailure: false,
   });
   const openTerminal = useAtomCommand(terminalEnvironment.open, "terminal open");
@@ -3044,6 +3050,19 @@ function ChatViewContent(props: ChatViewProps) {
         return updateResult;
       }
 
+      if (isElectron) {
+        for (const previousTarget of keybindingRulesForCommand(
+          keybindings,
+          input.keybindingCommand,
+        )) {
+          const removeResult = mapAtomCommandResult(
+            await removeKeybinding({ environmentId, input: previousTarget }),
+            () => undefined,
+          );
+          if (removeResult._tag === "Failure") return removeResult;
+        }
+      }
+
       const keybindingRule = decodeProjectScriptKeybindingRule({
         keybinding: input.keybinding,
         command: input.keybindingCommand,
@@ -3060,7 +3079,7 @@ function ChatViewContent(props: ChatViewProps) {
       }
       return updateResult;
     },
-    [environmentId, updateProject, upsertKeybinding],
+    [environmentId, keybindings, removeKeybinding, updateProject, upsertKeybinding],
   );
   const saveProjectScript = useCallback(
     async (input: NewProjectScriptInput): Promise<AtomCommandResult<void, unknown>> => {

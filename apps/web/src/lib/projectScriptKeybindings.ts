@@ -38,9 +38,16 @@ export function keybindingValueForCommand(
   keybindings: ResolvedKeybindingsConfig,
   command: KeybindingCommand,
 ): string | null {
-  for (let index = keybindings.length - 1; index >= 0; index -= 1) {
-    const binding = keybindings[index];
-    if (!binding || binding.command !== command) continue;
+  return keybindingRulesForCommand(keybindings, command).at(-1)?.key ?? null;
+}
+
+export function keybindingRulesForCommand(
+  keybindings: ResolvedKeybindingsConfig,
+  command: KeybindingCommand,
+): ReadonlyArray<KeybindingRule> {
+  const rules: KeybindingRule[] = [];
+  for (const binding of keybindings) {
+    if (binding.command !== command || binding.whenAst !== undefined) continue;
 
     const parts: string[] = [];
     if (binding.shortcut.modKey) parts.push("mod");
@@ -55,7 +62,7 @@ export function keybindingValueForCommand(
           ? "esc"
           : binding.shortcut.key;
     parts.push(keyToken);
-    return parts.join("+");
+    rules.push({ key: parts.join("+"), command });
   }
-  return null;
+  return rules;
 }

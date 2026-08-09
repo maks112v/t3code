@@ -4,6 +4,7 @@ import { describe, expect, it } from "vite-plus/test";
 import { commandForProjectScript } from "../projectScripts";
 import {
   decodeProjectScriptKeybindingRule,
+  keybindingRulesForCommand,
   keybindingValueForCommand,
   PROJECT_SCRIPT_KEYBINDING_INVALID_MESSAGE,
 } from "./projectScriptKeybindings";
@@ -79,5 +80,39 @@ describe("projectScriptKeybindings", () => {
     );
 
     expect(value).toBe("mod+shift+k");
+  });
+
+  it("returns every context-free rule for a project script command", () => {
+    const command = commandForProjectScript("dev");
+    expect(
+      keybindingRulesForCommand(
+        [
+          {
+            command,
+            shortcut: {
+              key: "r",
+              metaKey: false,
+              ctrlKey: false,
+              shiftKey: false,
+              altKey: false,
+              modKey: true,
+            },
+          },
+          {
+            command,
+            shortcut: {
+              key: "d",
+              metaKey: false,
+              ctrlKey: true,
+              shiftKey: false,
+              altKey: false,
+              modKey: false,
+            },
+            whenAst: { type: "identifier", name: "terminalFocus" },
+          },
+        ],
+        command,
+      ),
+    ).toEqual([{ key: "mod+r", command: "script.dev.run" }]);
   });
 });

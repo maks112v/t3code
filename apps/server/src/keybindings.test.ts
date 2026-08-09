@@ -457,6 +457,26 @@ it.layer(NodeServices.layer)("keybindings", (it) => {
     }).pipe(Effect.provide(makeKeybindingsLayer())),
   );
 
+  it.effect("removes every custom keybinding for selected commands", () =>
+    Effect.gen(function* () {
+      const { keybindingsConfigPath } = yield* ServerConfig.ServerConfig;
+      yield* writeKeybindingsConfig(keybindingsConfigPath, [
+        { key: "mod+r", command: "script.dev.run" },
+        { key: "mod+shift+r", command: "script.dev.run" },
+        { key: "mod+t", command: "script.test.run" },
+        { key: "mod+j", command: "terminal.toggle" },
+      ]);
+
+      yield* Effect.gen(function* () {
+        const keybindings = yield* Keybindings.Keybindings;
+        yield* keybindings.removeKeybindingRulesForCommands(["script.dev.run", "script.test.run"]);
+      });
+
+      const persisted = yield* readKeybindingsConfig(keybindingsConfigPath);
+      assert.deepEqual(persisted, [{ key: "mod+j", command: "terminal.toggle" }]);
+    }).pipe(Effect.provide(makeKeybindingsLayer())),
+  );
+
   it.effect("refuses to overwrite malformed keybindings config", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
