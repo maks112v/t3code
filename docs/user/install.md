@@ -69,6 +69,7 @@ T3 Code looks for, but authenticate with `agent login`, not `cursor-agent login`
 GitHub Copilot support is a proof of concept. Its SDK bundles the matching runtime, so no binary
 path is needed. Authenticate once with `copilot login`, or set `COPILOT_GITHUB_TOKEN` on the
 provider instance. Rollback and provider-backed title/branch/commit generation are not included.
+When you select Copilot Auto, the work log shows the concrete model Copilot chose for the turn.
 
 Run the login command on the machine running the T3 Code server, not on the device you browse
 from.
